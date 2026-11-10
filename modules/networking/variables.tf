@@ -15,3 +15,11 @@ variable "private_subnets" {
     availability_zone = string
   }))
 }
+
+variable "public_subnets" {
+  description = "Public subnets keyed by a stable logical name."
+  type = map(object({
+    cidr_block        = string
+    availability_zone = string
+  }))
+}

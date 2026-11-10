@@ -22,3 +22,10 @@ output "private_route_table_ids" {
     name => route_table.id
   }
 }
+
+output "public_subnet_ids" {
+  description = "Public subnet IDs keyed by logical name."
+  value = {
+    for name, subnet in aws_subnet.public : name => subnet.id
+  }
+}
