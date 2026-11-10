@@ -1,4 +1,4 @@
-name: Terraform plan
+name: Terraform deploy
 
 on:
   push:
@@ -18,12 +18,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  plan:
-    name: Plan infrastructure
+  deploy:
+    name: Plan and apply infrastructure
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: bootstrap
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     env:
       TF_IN_AUTOMATION: "true"
@@ -57,4 +57,24 @@ jobs:
         run: terraform validate -no-color
 
       - name: Plan infrastructure
-        run: terraform plan -input=false -no-color -lock-timeout=60s
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -lock-timeout=60s \
+            -out=deployment.tfplan
+
+      - name: Apply saved plan
+        run: |
+          terraform apply \
+            -input=false \
+            -no-color \
+            -lock-timeout=60s \
+            deployment.tfplan
+
+      - name: Show infrastructure outputs
+        run: terraform output -no-color
+
+      - name: Remove saved plan
+        if: always()
+        run: rm -f deployment.tfplan
