@@ -1,0 +1,145 @@
+name: Bootstrap state storage
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/bootstrap-state.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-state-storage
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Prepare private state bucket
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: bootstrap
+    timeout-minutes: 10
+
+    env:
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_PAGER: ""
+      EXPECTED_ACCOUNT: "485378272094"
+      STATE_BUCKET: sentinel-tfstate-485378272094-eu-north-1
+
+    steps:
+      - name: Verify AWS account
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          account_id="$(aws sts get-caller-identity \
+            --query Account --output text)"
+
+          if [[ "$account_id" != "$EXPECTED_ACCOUNT" ]]; then
+            echo "::error::Unexpected AWS account."
+            exit 1
+          fi
+
+      - name: Create or verify state bucket
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          existing="$(aws s3api list-buckets \
+            --query "Buckets[?Name=='${STATE_BUCKET}'].Name" \
+            --output text)"
+
+          if [[ "$existing" == "$STATE_BUCKET" ]]; then
+            echo "Using existing bucket owned by this account."
+          else
+            aws s3api create-bucket \
+              --bucket "$STATE_BUCKET" \
+              --region "$AWS_REGION" \
+              --create-bucket-configuration \
+                "LocationConstraint=$AWS_REGION"
+          fi
+
+          aws s3api head-bucket \
+            --bucket "$STATE_BUCKET" \
+            --expected-bucket-owner "$EXPECTED_ACCOUNT"
+
+          location="$(aws s3api get-bucket-location \
+            --bucket "$STATE_BUCKET" \
+            --expected-bucket-owner "$EXPECTED_ACCOUNT" \
+            --query LocationConstraint --output text)"
+
+          if [[ "$location" != "$AWS_REGION" ]]; then
+            echo "::error::State bucket is in an unexpected Region."
+            exit 1
+          fi
+
+      - name: Configure state bucket protection
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws s3api put-public-access-block \
+            --bucket "$STATE_BUCKET" \
+            --expected-bucket-owner "$EXPECTED_ACCOUNT" \
+            --public-access-block-configuration \
+              'BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true'
+
+          aws s3api put-bucket-versioning \
+            --bucket "$STATE_BUCKET" \
+            --expected-bucket-owner "$EXPECTED_ACCOUNT" \
+            --versioning-configuration Status=Enabled
+
+          aws s3api put-bucket-encryption \
+            --bucket "$STATE_BUCKET" \
+            --expected-bucket-owner "$EXPECTED_ACCOUNT" \
+            --server-side-encryption-configuration \
+              '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+
+          policy="$(cat <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                "arn:aws:s3:::${STATE_BUCKET}",
+                "arn:aws:s3:::${STATE_BUCKET}/*"
+              ],
+              "Condition": {
+                "Bool": {"aws:SecureTransport": "false"}
+              }
+            }]
+          }
+          EOF
+          )"
+
+          aws s3api put-bucket-policy \
+            --bucket "$STATE_BUCKET" \
+            --expected-bucket-owner "$EXPECTED_ACCOUNT" \
+            --policy "$policy"
+
+      - name: Verify bucket configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws s3api get-public-access-block \
+            --bucket "$STATE_BUCKET" \
+            --expected-bucket-owner "$EXPECTED_ACCOUNT"
+
+          aws s3api get-bucket-versioning \
+            --bucket "$STATE_BUCKET" \
+            --expected-bucket-owner "$EXPECTED_ACCOUNT"
+
+          aws s3api get-bucket-encryption \
+            --bucket "$STATE_BUCKET" \
+            --expected-bucket-owner "$EXPECTED_ACCOUNT"
