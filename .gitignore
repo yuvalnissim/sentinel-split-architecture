@@ -1,0 +1,17 @@
+﻿**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.json.example
+.env
+.env.*
+!.env.example
+.aws/
+*kubeconfig*
+*.pem
+*.key
