@@ -14,3 +14,11 @@ output "private_subnet_ids" {
     for name, subnet in aws_subnet.private : name => subnet.id
   }
 }
+
+output "private_route_table_ids" {
+  description = "Private route table IDs keyed by logical subnet name."
+  value = {
+    for name, route_table in aws_route_table.private :
+    name => route_table.id
+  }
+}
