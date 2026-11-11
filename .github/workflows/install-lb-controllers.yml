@@ -1,0 +1,120 @@
+name: Install load balancer controllers
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/install-lb-controllers.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-controller-installation
+  cancel-in-progress: false
+
+jobs:
+  install:
+    name: Install controller in ${{ matrix.cluster }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, sentinel]
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - cluster: eks-gateway
+            vpc: vpc-0940cc90a288b5995
+          - cluster: eks-backend
+            vpc: vpc-0349516895f0bda08
+
+    env:
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_PAGER: ""
+      CLUSTER_NAME: ${{ matrix.cluster }}
+      VPC_ID: ${{ matrix.vpc }}
+      INSTALLER_ROLE_ARN: arn:aws:iam::485378272094:role/sentinel-controller-installer
+      KUBECONFIG: ${{ runner.temp }}/sentinel-controller-kubeconfig
+
+    steps:
+      - name: Verify runner identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          identity="$(aws sts get-caller-identity --query Arn --output text)"
+
+          case "$identity" in
+            arn:aws:sts::485378272094:assumed-role/sentinel-private-runner/*)
+              echo "Verified private runner IAM role."
+              ;;
+            *)
+              echo "Unexpected runner identity."
+              exit 1
+              ;;
+          esac
+
+      - name: Configure temporary installation access
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          aws eks update-kubeconfig \
+            --name "$CLUSTER_NAME" \
+            --region "$AWS_REGION" \
+            --role-arn "$INSTALLER_ROLE_ARN" \
+            --alias controller-install \
+            --kubeconfig "$KUBECONFIG"
+
+          kubectl auth can-i create clusterroles.rbac.authorization.k8s.io \
+            --request-timeout=20s
+
+      - name: Prepare Helm repository
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          helm repo add eks https://aws.github.io/eks-charts --force-update
+          helm repo update eks
+
+      - name: Install pinned controller
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          helm upgrade --install aws-load-balancer-controller \
+            eks/aws-load-balancer-controller \
+            --version 3.6.2 \
+            --namespace kube-system \
+            --set clusterName="$CLUSTER_NAME" \
+            --set region="$AWS_REGION" \
+            --set vpcId="$VPC_ID" \
+            --set serviceAccount.create=true \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --set replicaCount=2 \
+            --wait \
+            --timeout 10m
+
+      - name: Verify controller deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          kubectl -n kube-system rollout status \
+            deployment/aws-load-balancer-controller \
+            --timeout=180s
+
+          kubectl -n kube-system get pods \
+            -l app.kubernetes.io/name=aws-load-balancer-controller \
+            -o wide
+
+      - name: Remove temporary kubeconfig
+        if: always()
+        shell: bash
+        run: rm -f "$KUBECONFIG"
