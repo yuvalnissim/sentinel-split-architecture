@@ -19,7 +19,6 @@ resource "aws_iam_role_policy_attachment" "nodes" {
   for_each = toset([
     "AmazonEKSWorkerNodePolicy",
     "AmazonEC2ContainerRegistryPullOnly",
-    "AmazonEKS_CNI_Policy",
   ])
 
   role       = aws_iam_role.nodes.name
