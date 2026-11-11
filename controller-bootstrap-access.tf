@@ -1,6 +1,6 @@
 locals {
   # Temporary installation access. Set to false after controller installation.
-  enable_controller_bootstrap = true
+  enable_controller_bootstrap = false
 
   controller_bootstrap_clusters = {
     for name, cluster in module.eks : name => cluster
