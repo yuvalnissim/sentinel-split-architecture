@@ -1,0 +1,33 @@
+name: Install private runner tools
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/install-runner-tools.sh"
+      - ".github/workflows/runner-tools.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-runner-tools
+  cancel-in-progress: false
+
+jobs:
+  install:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, sentinel]
+    timeout-minutes: 15
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install verified tool versions
+        shell: bash
+        run: bash scripts/install-runner-tools.sh
