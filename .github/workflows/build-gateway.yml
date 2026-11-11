@@ -1,0 +1,148 @@
+name: Build and publish gateway
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/gateway/**"
+      - ".github/workflows/build-gateway.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-gateway-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build, test and publish gateway
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, sentinel]
+    timeout-minutes: 20
+
+    env:
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_PAGER: ""
+      REGISTRY: 485378272094.dkr.ecr.eu-north-1.amazonaws.com
+      BACKEND_IMAGE: 485378272094.dkr.ecr.eu-north-1.amazonaws.com/sentinel/backend@sha256:ceb0751d421b57dd5d95db4236b18fea0e5788f86f2b0d89e44623cc7c4969c2
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build, test and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          identity="$(aws sts get-caller-identity --query Arn --output text)"
+          case "$identity" in
+            arn:aws:sts::485378272094:assumed-role/sentinel-private-runner/*)
+              echo "Verified private runner IAM role."
+              ;;
+            *)
+              echo "Unexpected runner identity."
+              exit 1
+              ;;
+          esac
+
+          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          image_tag="${GITHUB_SHA}-${suffix}"
+          image_uri="${REGISTRY}/sentinel/gateway:${image_tag}"
+          network_name="sentinel-proxy-test-${suffix}"
+          backend_name="sentinel-backend-test-${suffix}"
+          gateway_name="sentinel-gateway-test-${suffix}"
+          docker_config="$(mktemp -d)"
+
+          cleanup() {
+            sudo -n docker rm -f "$gateway_name" "$backend_name" >/dev/null 2>&1 || true
+            sudo -n docker network rm "$network_name" >/dev/null 2>&1 || true
+            sudo -n docker image rm "$image_uri" >/dev/null 2>&1 || true
+            sudo -n rm -rf "$docker_config"
+          }
+          trap cleanup EXIT
+
+          aws ecr get-login-password --region "$AWS_REGION" |
+            sudo -n docker --config "$docker_config" login \
+              --username AWS \
+              --password-stdin "$REGISTRY"
+
+          sudo -n docker --config "$docker_config" pull "$BACKEND_IMAGE"
+
+          sudo -n docker build --pull \
+            --tag "$image_uri" apps/gateway
+
+          sudo -n docker network create "$network_name"
+
+          sudo -n docker run --detach \
+            --name "$backend_name" \
+            --network "$network_name" \
+            --network-alias backend \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            "$BACKEND_IMAGE"
+
+          sudo -n docker run --detach \
+            --name "$gateway_name" \
+            --network "$network_name" \
+            --network-alias gateway \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --env BACKEND_URL=http://backend:8080 \
+            --env DNS_RESOLVER=127.0.0.11 \
+            "$image_uri"
+
+          sudo -n docker exec -i "$backend_name" python - <<'PY'
+          import time
+          import urllib.error
+          import urllib.request
+
+          def expect(path, expected):
+              with urllib.request.urlopen(
+                  "http://gateway:8080" + path, timeout=5
+              ) as response:
+                  assert response.status == 200
+                  assert response.read() == expected
+
+          for attempt in range(30):
+              try:
+                  expect("/healthz", b"ok\n")
+                  expect("/", b"Hello from backend\n")
+                  break
+              except (urllib.error.URLError, TimeoutError):
+                  if attempt == 29:
+                      raise
+                  time.sleep(1)
+
+          try:
+              urllib.request.urlopen("http://gateway:8080/missing", timeout=5)
+          except urllib.error.HTTPError as error:
+              assert error.code == 404
+          else:
+              raise AssertionError("Expected backend HTTP 404 through proxy")
+
+          print("Gateway checks passed: health, proxy response and forwarded 404.")
+          PY
+
+          sudo -n docker --config "$docker_config" push "$image_uri"
+
+          digest="$(aws ecr describe-images \
+            --repository-name sentinel/gateway \
+            --image-ids imageTag="$image_tag" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+
+          {
+            echo "### Gateway image published"
+            echo
+            echo "- Image: \`$image_uri\`"
+            echo "- Digest: \`$digest\`"
+            echo "- Proxy integration checks passed."
+          } >> "$GITHUB_STEP_SUMMARY"
