@@ -39,9 +39,14 @@ jobs:
       CLUSTER_NAME: ${{ matrix.cluster }}
       VPC_ID: ${{ matrix.vpc }}
       INSTALLER_ROLE_ARN: arn:aws:iam::485378272094:role/sentinel-controller-installer
-      KUBECONFIG: ${{ runner.temp }}/sentinel-controller-kubeconfig
 
     steps:
+      - name: Set temporary kubeconfig path
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "KUBECONFIG=$RUNNER_TEMP/sentinel-controller-kubeconfig" >> "$GITHUB_ENV"
+
       - name: Verify runner identity
         shell: bash
         run: |
@@ -117,4 +122,7 @@ jobs:
       - name: Remove temporary kubeconfig
         if: always()
         shell: bash
-        run: rm -f "$KUBECONFIG"
+        run: |
+          if [ -n "${KUBECONFIG:-}" ]; then
+            rm -f "$KUBECONFIG"
+          fi
