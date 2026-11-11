@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-gateway
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sentinel-gateway
+  template:
+    metadata:
+      labels:
+        app: sentinel-gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: sentinel-gateway
+      containers:
+        - name: gateway
+          image: 485378272094.dkr.ecr.eu-north-1.amazonaws.com/sentinel/gateway@sha256:6b36c51f3fda99d8c9632340854be41601cfdb9251298b0628d5ec9008490e9a
+          env:
+            - name: BACKEND_URL
+              value: http://internal-k8s-default-sentinel-56383b7c00-1517870527.eu-north-1.elb.amazonaws.com
+            - name: DNS_RESOLVER
+              value: "10.30.0.2"
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: temporary-files
+              mountPath: /tmp
+            - name: generated-config
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: temporary-files
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: generated-config
+          emptyDir:
+            sizeLimit: 1Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinel-gateway
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: sentinel-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
