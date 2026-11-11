@@ -1,0 +1,53 @@
+name: Check private runner
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/runner-check.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, sentinel]
+    timeout-minutes: 5
+
+    env:
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_PAGER: ""
+
+    steps:
+      - name: Check machine
+        run: |
+          set -euo pipefail
+          whoami
+          uname -m
+          git --version
+          aws --version
+
+      - name: Verify EC2 role identity
+        run: |
+          set -euo pipefail
+
+          account="$(aws sts get-caller-identity \
+            --query Account --output text)"
+
+          arn="$(aws sts get-caller-identity \
+            --query Arn --output text)"
+
+          test "$account" = "485378272094"
+
+          case "$arn" in
+            arn:aws:sts::485378272094:assumed-role/sentinel-private-runner/*)
+              echo "Verified: private runner uses its EC2 IAM role."
+              ;;
+            *)
+              echo "::error::Unexpected AWS identity."
+              exit 1
+              ;;
+          esac
