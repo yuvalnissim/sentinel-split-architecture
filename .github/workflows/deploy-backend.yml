@@ -1,0 +1,89 @@
+name: Deploy backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "k8s/backend/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-backend-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy private backend
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, sentinel]
+    timeout-minutes: 15
+
+    env:
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_PAGER: ""
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Configure cluster access
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          kubeconfig_path="$RUNNER_TEMP/sentinel-backend-deploy-kubeconfig"
+          echo "KUBECONFIG=$kubeconfig_path" >> "$GITHUB_ENV"
+
+          aws eks update-kubeconfig \
+            --name eks-backend \
+            --region "$AWS_REGION" \
+            --alias sentinel-backend-deploy \
+            --kubeconfig "$kubeconfig_path"
+
+      - name: Validate manifests against Kubernetes API
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply --dry-run=server \
+            -f k8s/backend/backend.yml \
+            --request-timeout=30s
+
+      - name: Deploy backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply -f k8s/backend/backend.yml
+
+          kubectl -n default rollout status \
+            deployment/sentinel-backend \
+            --timeout=300s
+
+      - name: Show backend resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl -n default get deployment,service \
+            -l app=sentinel-backend
+
+          kubectl -n default get pods \
+            -l app=sentinel-backend \
+            -o wide
+
+          kubectl -n default get service sentinel-backend
+
+      - name: Remove temporary kubeconfig
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${KUBECONFIG:-}" ]; then
+            rm -f "$KUBECONFIG"
+          fi
