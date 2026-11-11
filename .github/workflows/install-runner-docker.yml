@@ -1,0 +1,44 @@
+name: Install Docker on private runner
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/install-runner-docker.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: sentinel-runner-tools
+  cancel-in-progress: false
+
+jobs:
+  install:
+    name: Install and verify Docker
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, sentinel]
+    timeout-minutes: 15
+
+    steps:
+      - name: Install Docker package
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n dnf install -y docker
+
+      - name: Enable Docker service
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n systemctl enable --now docker
+          sudo -n systemctl is-active docker
+
+      - name: Verify Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker version
+          sudo -n docker info
+          df -h /
