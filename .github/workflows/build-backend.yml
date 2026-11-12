@@ -1,4 +1,4 @@
-name: Build and publish backend
+name: Build and deploy backend
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "apps/backend/**"
+      - "k8s/backend/**"
       - ".github/workflows/build-backend.yml"
   workflow_dispatch:
 
@@ -13,15 +14,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: sentinel-backend-build
+  group: sentinel-backend-deploy
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build, test and publish backend
+  build-deploy:
+    name: Build, test, publish and deploy backend
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64, sentinel]
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     env:
       AWS_REGION: eu-north-1
@@ -36,12 +37,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build, test and publish
+      - name: Prepare temporary deployment directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          deployment_dir="$(mktemp -d "$RUNNER_TEMP/sentinel-backend.XXXXXX")"
+
+          echo "DEPLOYMENT_DIR=$deployment_dir" >> "$GITHUB_ENV"
+          echo "KUBECONFIG=$deployment_dir/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Verify runner identity
         shell: bash
         run: |
           set -euo pipefail
 
           identity="$(aws sts get-caller-identity --query Arn --output text)"
+
           case "$identity" in
             arn:aws:sts::485378272094:assumed-role/sentinel-private-runner/*)
               echo "Verified private runner IAM role."
@@ -51,6 +64,11 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Build, test and publish
+        shell: bash
+        run: |
+          set -euo pipefail
 
           image_tag="${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           image_uri="${REGISTRY}/${REPOSITORY}:${image_tag}"
@@ -121,6 +139,14 @@ jobs:
             --query 'imageDetails[0].imageDigest' \
             --output text)"
 
+          if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "Invalid image digest returned by ECR."
+            exit 1
+          fi
+
+          echo "BACKEND_DIGEST=$digest" >> "$GITHUB_ENV"
+          echo "BACKEND_IMAGE=${REGISTRY}/${REPOSITORY}@${digest}" >> "$GITHUB_ENV"
+
           {
             echo "### Backend image published"
             echo
@@ -128,3 +154,94 @@ jobs:
             echo "- Digest: \`$digest\`"
             echo "- Container checks passed."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Render manifests with published image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cp k8s/backend/backend.yml "$DEPLOYMENT_DIR/backend.yml"
+
+          cat > "$DEPLOYMENT_DIR/kustomization.yaml" <<EOF
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+            - backend.yml
+          images:
+            - name: ${REGISTRY}/${REPOSITORY}
+              newName: ${REGISTRY}/${REPOSITORY}
+              digest: ${BACKEND_DIGEST}
+          EOF
+
+          kubectl kustomize "$DEPLOYMENT_DIR" \
+            > "$DEPLOYMENT_DIR/rendered.yml"
+
+      - name: Configure cluster access
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          aws eks update-kubeconfig \
+            --name eks-backend \
+            --region "$AWS_REGION" \
+            --alias sentinel-backend-deploy \
+            --kubeconfig "$KUBECONFIG"
+
+      - name: Validate manifests against Kubernetes API
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          kubectl apply --dry-run=server \
+            -f "$DEPLOYMENT_DIR/rendered.yml" \
+            --request-timeout=30s
+
+      - name: Deploy backend
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          kubectl apply \
+            -f "$DEPLOYMENT_DIR/rendered.yml" \
+            --request-timeout=30s
+
+          kubectl -n default rollout status \
+            deployment/sentinel-backend \
+            --timeout=300s
+
+      - name: Verify deployed image and show resources
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          deployed_image="$(kubectl -n default get deployment sentinel-backend \
+            -o jsonpath='{.spec.template.spec.containers[?(@.name=="backend")].image}' \
+            --request-timeout=20s)"
+
+          if [ "$deployed_image" != "$BACKEND_IMAGE" ]; then
+            echo "Deployed image does not match the published image."
+            exit 1
+          fi
+
+          kubectl -n default get deployment sentinel-backend
+          kubectl -n default get service sentinel-backend
+          kubectl -n default get ingress sentinel-backend
+          kubectl -n default get pods -l app=sentinel-backend -o wide
+
+          {
+            echo
+            echo "### Backend deployment verified"
+            echo
+            echo "- Cluster: \`eks-backend\`"
+            echo "- Deployed image: \`$deployed_image\`"
+            echo "- Deployment rollout completed successfully."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary deployment files
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${DEPLOYMENT_DIR:-}" ] && [ -d "$DEPLOYMENT_DIR" ]; then
+            rm -rf -- "$DEPLOYMENT_DIR"
+          fi
