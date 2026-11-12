@@ -80,7 +80,7 @@ shared_groups = []
 for group in groups:
     tags = {
         tag["Key"]: tag["Value"]
-        for tag in group.get("Tags", [])
+        for tag in (group.get("Tags") or [])
     }
 
     cluster = tags.get("elbv2.k8s.aws/cluster")
@@ -117,12 +117,14 @@ for shared_group in shared_groups:
             f"Security group {group_id} is still attached to network interfaces."
         )
 
-    referencing_rules = aws(
-        "ec2",
-        "describe-security-group-rules",
-        "--filters",
-        f"Name=referenced-group-id,Values={group_id}",
-    )["SecurityGroupRules"]
+    referencing_rules = [
+        rule
+        for rule in aws(
+            "ec2",
+            "describe-security-group-rules",
+        )["SecurityGroupRules"]
+        if (rule.get("ReferencedGroupInfo") or {}).get("GroupId") == group_id
+    ]
 
     for rule in referencing_rules:
         owner = groups_by_id.get(rule["GroupId"])
