@@ -12,7 +12,14 @@ Hello from backend
 
 ## Project status
 
-The infrastructure and applications have been deployed successfully.
+The infrastructure and applications were deployed and validated successfully.
+The lab environment was destroyed on 12 November 2026 after validation.
+The application endpoints are no longer active.
+
+The teardown workflow completed successfully and verified an empty Terraform
+state. Follow-up AWS checks returned no EKS clusters, neither project VPC,
+and no active project-tagged EC2 instances. The separately bootstrapped S3
+state bucket was subsequently emptied and deleted.
 
 Verified capabilities include:
 
@@ -352,7 +359,8 @@ EKS clusters, worker instances, NAT Gateways, ALBs, storage and other resources 
 
 Closing a terminal, browser or SSM session does not stop the environment.
 
-An automated teardown workflow has not yet been implemented. The intended teardown order is:
+The manually triggered cleanup.yml workflow performs ordered teardown.
+It was successfully executed for this lab. The teardown order is:
 
 1. Stop new application and infrastructure deployment runs.
 2. Delete application Ingress resources while the controllers and worker nodes are still running.

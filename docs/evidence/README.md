@@ -45,3 +45,15 @@ Together with the configured security group rules, these results support the int
 These checks demonstrate successful deployments, end-to-end HTTP connectivity, and failed direct access attempts from the tested sources.
 
 They do not establish comprehensive security, load capacity, or availability during infrastructure failures.
+
+## Environment teardown
+
+The `Destroy Sentinel environment` workflow completed successfully on
+12 November 2026 and verified that Terraform state contained no managed
+resources.
+
+Follow-up AWS checks returned no EKS clusters in eu-north-1, neither
+project VPC, and no active project-tagged EC2 instances.
+
+The separately bootstrapped S3 state bucket was subsequently emptied
+and deleted. The application endpoints shown above are no longer active.
