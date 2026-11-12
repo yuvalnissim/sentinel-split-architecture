@@ -33,6 +33,11 @@ jobs:
           terraform_version: "1.16.6"
           terraform_wrapper: false
 
+      - name: Install TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: "v0.66.0"
+
       - name: Check formatting
         run: terraform fmt -check -recursive
 
@@ -41,3 +46,9 @@ jobs:
 
       - name: Validate configuration
         run: terraform validate -no-color
+
+      - name: Initialize TFLint
+        run: tflint --init
+
+      - name: Lint Terraform and modules
+        run: tflint --recursive --format compact
