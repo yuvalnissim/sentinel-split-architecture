@@ -1,0 +1,192 @@
+name: Destroy Sentinel environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type DESTROY-SENTINEL to delete the lab and its ECR images"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-terraform-state
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Verify cleanup prerequisites
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'DESTROY-SENTINEL'
+    runs-on: ubuntu-latest
+    environment: bootstrap
+    timeout-minutes: 5
+
+    env:
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_PAGER: ""
+
+    steps:
+      - name: Verify AWS credentials and account
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          test "$account" = "485378272094"
+
+          aws elbv2 describe-load-balancers --query 'length(LoadBalancers)'
+          aws elbv2 describe-target-groups --query 'length(TargetGroups)'
+
+  workloads:
+    name: Remove application resources
+    needs: preflight
+    runs-on: [self-hosted, Linux, X64, sentinel]
+    timeout-minutes: 35
+
+    env:
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_PAGER: ""
+
+    steps:
+      - name: Verify runner identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          identity="$(aws sts get-caller-identity --query Arn --output text)"
+
+          case "$identity" in
+            arn:aws:sts::485378272094:assumed-role/sentinel-private-runner/*)
+              echo "Verified private runner IAM role."
+              ;;
+            *)
+              echo "Unexpected runner identity."
+              exit 1
+              ;;
+          esac
+
+      - name: Remove Ingress resources before applications
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          cleanup_dir="$(mktemp -d "$RUNNER_TEMP/sentinel-cleanup.XXXXXX")"
+          trap 'rm -rf -- "$cleanup_dir"' EXIT
+
+          for domain in gateway backend; do
+            kubeconfig="$cleanup_dir/$domain"
+
+            aws eks update-kubeconfig \
+              --name "eks-$domain" \
+              --region "$AWS_REGION" \
+              --alias "cleanup-$domain" \
+              --kubeconfig "$kubeconfig"
+
+            kubectl --kubeconfig "$kubeconfig" \
+              -n default delete ingress "sentinel-$domain" \
+              --ignore-not-found=true \
+              --wait=true \
+              --timeout=900s \
+              --request-timeout=30s
+          done
+
+          for domain in gateway backend; do
+            kubeconfig="$cleanup_dir/$domain"
+
+            kubectl --kubeconfig "$kubeconfig" \
+              -n default delete deployment,service "sentinel-$domain" \
+              --ignore-not-found=true \
+              --wait=true \
+              --timeout=180s \
+              --request-timeout=30s
+          done
+
+  infrastructure:
+    name: Verify ALB cleanup and destroy infrastructure
+    needs: workloads
+    runs-on: ubuntu-latest
+    environment: bootstrap
+    timeout-minutes: 90
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_PAGER: ""
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.6"
+          terraform_wrapper: false
+
+      - name: Verify AWS account
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          test "$account" = "485378272094"
+
+      - name: Initialize remote state
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Validate configuration
+        run: terraform validate -no-color
+
+      - name: Verify and clean controller-created resources
+        run: python3 scripts/cleanup-controller-resources.py
+
+      - name: Create destroy plan
+        run: |
+          terraform plan \
+            -destroy \
+            -input=false \
+            -no-color \
+            -lock-timeout=60s \
+            -out=destruction.tfplan
+
+      - name: Apply saved destroy plan
+        run: |
+          terraform apply \
+            -input=false \
+            -no-color \
+            -lock-timeout=60s \
+            destruction.tfplan
+
+      - name: Verify Terraform state is empty
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          remaining="$(terraform state list)"
+
+          if [ -n "$remaining" ]; then
+            echo "Terraform state still contains resources:"
+            printf '%s\n' "$remaining"
+            exit 1
+          fi
+
+          echo "Terraform state contains no managed resources."
+
+      - name: Remove saved plan
+        if: always()
+        run: rm -f destruction.tfplan
