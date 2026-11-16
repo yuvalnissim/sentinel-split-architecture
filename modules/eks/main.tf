@@ -47,6 +47,14 @@ resource "aws_eks_cluster" "this" {
     endpoint_public_access  = false
   }
 
+  lifecycle {
+    # EKS does not return this creation-only setting. The AWS provider defaults
+    # it to true on import, which otherwise forces replacement of the cluster.
+    # New clusters still request false through access_config above. This does
+    # not verify existing creator access; audit EKS access entries separately.
+    ignore_changes = [access_config[0].bootstrap_cluster_creator_admin_permissions]
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.cluster,
   ]
