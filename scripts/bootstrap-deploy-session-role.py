@@ -11,7 +11,7 @@ ACCOUNT = "485378272094"
 REGION = "eu-north-1"
 ROLE = "sentinel-terraform-deployer"
 PROJECT = "sentinel-split-architecture"
-SOURCE = f"arn:aws:iam::{ACCOUNT}:role/AccountFullAccessRole"
+SOURCE = f"arn:aws:iam::{ACCOUNT}:role/managed/AccountFullAccessRole"
 POLICY_NAME = "sentinel-complete-recovered-environment"
 BUCKET = f"sentinel-tfstate-{ACCOUNT}-{REGION}"
 
@@ -111,6 +111,10 @@ def main():
     if identity["Account"] != ACCOUNT or not identity["Arn"].startswith(
             f"arn:aws:sts::{ACCOUNT}:assumed-role/AccountFullAccessRole/"):
         raise RuntimeError("Expected the reviewed bootstrap account and role")
+    # STS session ARNs omit the IAM role path; resolve the full IAM ARN.
+    source_role = aws("iam", "get-role", "--role-name", "AccountFullAccessRole")["Role"]
+    if source_role["Arn"] != SOURCE:
+        raise RuntimeError("Bootstrap role ARN differs from the reviewed trust principal")
     clusters = [aws("eks", "describe-cluster", "--name", f"eks-{d}")["cluster"]
                 for d in ("gateway", "backend")]
     expected_vpcs = ["vpc-00127c0d370f4e9b2", "vpc-08829c8d48837184a"]
