@@ -20,7 +20,11 @@ You need:
 - Git, AWS CLI v2, GitHub CLI (`gh`) and a GitHub account with Actions and
   repository-administration access. Windows PowerShell is supported locally.
 - An unexpired AWS lab session, including its session token, available as
-  profile `aws-lab`. Its lifetime must cover provisioning and teardown.
+  profile `aws-lab`. Copied credentials in GitHub need at least 55 minutes
+  remaining at the start of infrastructure provisioning. Refresh again for
+  later runs and teardown as needed. Local `aws login` refreshes 15-minute
+  credentials automatically; exporting those three values does not transfer
+  refresh capability to GitHub and is unsuitable for a long apply.
 - Permission to create the documented resources and scoped role policies.
 - Access to Systems Manager Session Manager for the private runner.
 - Available EKS/EC2/NAT/Elastic IP quotas and non-overlapping VPC CIDRs.
@@ -59,6 +63,15 @@ environment secrets from the same current AWS session:
 | `AWS_ACCESS_KEY_ID` | Session access key |
 | `AWS_SECRET_ACCESS_KEY` | Session secret key |
 | `AWS_SESSION_TOKEN` | Session token |
+
+In the same `bootstrap` environment, set the **environment variable**
+`AWS_CREDENTIAL_EXPIRATION` to the exact session expiration in ISO-8601 form
+with a timezone, for example `2026-11-16T15:00:00Z`. Update it whenever the
+three secrets change; do not invent or extend its value. Deployment checks
+this before init and again before apply. Use credentials provided through
+an approved lab/session mechanism with sufficient lifetime. If only
+15-minute login exports are available, stop and resolve the authentication
+method rather than repeatedly copying short-lived keys.
 
 Paste secrets through the GitHub UI, never into source files, issues or logs.
 Configure any required environment approvals. Enable Actions if GitHub has
@@ -113,8 +126,10 @@ flag creates `sentinel-controller-installer`, its EKS access and the runner's
 permission to assume it. Both are removed in later steps. Read
 [CNI bootstrap](cni-bootstrap.md) before proceeding.
 
-If apply fails, inspect the failed step and current state, fix the stated
-cause and rerun with the same bootstrap settings. Do not manually recreate
+If apply fails, inspect the failed step and current state. If state persistence
+or lock release failed, **do not rerun apply**: recover missing state bindings
+first. See [interrupted-state recovery](state-recovery.md) for the November 16
+incident. Only rerun with the same bootstrap settings once state is consistent. Do not manually recreate
 Terraform-managed resources or remove state entries to hide a failure.
 
 ## 5. Register the private runner (Session Manager)
