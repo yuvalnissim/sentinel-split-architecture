@@ -5,12 +5,6 @@ import time
 REGION = "eu-north-1"
 ACCOUNT = "485378272094"
 
-CLUSTERS = {
-    "eks-gateway": "vpc-0940cc90a288b5995",
-    "eks-backend": "vpc-0349516895f0bda08",
-}
-VPCS = set(CLUSTERS.values())
-
 
 def aws(service, operation, *arguments):
     command = [
@@ -29,6 +23,16 @@ def aws(service, operation, *arguments):
 identity = aws("sts", "get-caller-identity")
 if identity["Account"] != ACCOUNT:
     raise RuntimeError("Unexpected AWS account.")
+
+# Resolve current VPCs before any mutations. Missing clusters abort cleanup;
+# never fall back to IDs from a previous environment.
+CLUSTERS = {
+    name: aws("eks", "describe-cluster", "--name", name)["cluster"]["resourcesVpcConfig"]["vpcId"]
+    for name in ("eks-gateway", "eks-backend")
+}
+VPCS = set(CLUSTERS.values())
+if len(VPCS) != 2 or not all(vpc.startswith("vpc-") for vpc in VPCS):
+    raise RuntimeError("Expected two distinct cluster VPCs.")
 
 # Controllers must finish deleting load balancers and target groups first.
 deadline = time.monotonic() + 900

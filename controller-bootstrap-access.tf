@@ -1,10 +1,7 @@
 locals {
-  # Temporary installation access. Set to false after controller installation.
-  enable_controller_bootstrap = false
-
   controller_bootstrap_clusters = {
     for name, cluster in module.eks : name => cluster
-    if local.enable_controller_bootstrap
+    if var.enable_controller_bootstrap
   }
 }
 
@@ -21,7 +18,7 @@ data "aws_iam_policy_document" "controller_installer_trust" {
 }
 
 resource "aws_iam_role" "controller_installer" {
-  count = local.enable_controller_bootstrap ? 1 : 0
+  count = var.enable_controller_bootstrap ? 1 : 0
 
   name                 = "sentinel-controller-installer"
   assume_role_policy   = data.aws_iam_policy_document.controller_installer_trust.json
@@ -29,7 +26,7 @@ resource "aws_iam_role" "controller_installer" {
 }
 
 data "aws_iam_policy_document" "runner_assume_controller_installer" {
-  count = local.enable_controller_bootstrap ? 1 : 0
+  count = var.enable_controller_bootstrap ? 1 : 0
 
   statement {
     effect    = "Allow"
@@ -39,7 +36,7 @@ data "aws_iam_policy_document" "runner_assume_controller_installer" {
 }
 
 resource "aws_iam_role_policy" "runner_assume_controller_installer" {
-  count = local.enable_controller_bootstrap ? 1 : 0
+  count = var.enable_controller_bootstrap ? 1 : 0
 
   name   = "sentinel-assume-controller-installer"
   role   = module.runner_iam.role_name

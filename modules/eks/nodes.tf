@@ -25,6 +25,15 @@ resource "aws_iam_role_policy_attachment" "nodes" {
   policy_arn = "arn:aws:iam::aws:policy/${each.value}"
 }
 
+# The initial aws-node DaemonSet needs permissions before the node group
+# becomes ready and the Pod Identity Agent can be installed.
+resource "aws_iam_role_policy_attachment" "cni_bootstrap" {
+  count = var.enable_cni_bootstrap ? 1 : 0
+
+  role       = aws_iam_role.nodes.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+}
+
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.cluster_name}-workers"
@@ -53,5 +62,6 @@ resource "aws_eks_node_group" "this" {
 
   depends_on = [
     aws_iam_role_policy_attachment.nodes,
+    aws_iam_role_policy_attachment.cni_bootstrap,
   ]
 }

@@ -1,4 +1,4 @@
-﻿# Sentinel Split Architecture
+# Sentinel Split Architecture
 
 An AWS proof of concept that exposes a public gateway while keeping the backend application and both Kubernetes management APIs private.
 
@@ -126,9 +126,9 @@ The infrastructure deployment workflow:
 1. Checks formatting.
 2. Initializes the remote state backend.
 3. Validates the configuration.
-4. Creates a saved Terraform plan.
-5. Applies that saved plan.
-6. Displays outputs and removes the local plan file.
+4. Runs TFLint and the local plan-guard/manifest-rendering tests as blocking checks.
+5. Creates a saved Terraform plan and checks CNI bootstrap permissions.
+6. Applies that saved plan, displays outputs and removes the local plan file.
 
 Terraform state is stored in an S3 bucket with:
 
@@ -158,7 +158,7 @@ Each workflow runs on the private self-hosted runner after relevant changes reac
 3. Tests health, the expected response and an unknown route.
 4. Publishes the image to ECR using a unique immutable tag.
 5. Retrieves its SHA-256 digest.
-6. Uses Kustomize to render deployment manifests with that digest.
+6. Discovers the backend ALB security group and uses Kustomize to render manifests with that digest.
 7. Validates the rendered manifests against the Kubernetes API.
 8. Applies the manifests and waits for rollout.
 9. Confirms that the Deployment references the published image digest.
@@ -166,7 +166,7 @@ Each workflow runs on the private self-hosted runner after relevant changes reac
 
 ### Gateway pipeline
 
-The gateway pipeline follows the same build-and-deploy sequence.
+The gateway pipeline follows the same build-and-deploy sequence. It reads the current internal backend ALB hostname from the backend Ingress before rendering the gateway configuration.
 
 Before testing, it reads the backend Deployment's image reference from `eks-backend`. It uses that digest-pinned image in an isolated Docker network to verify:
 
@@ -223,7 +223,7 @@ EKS Pod Identity provides separate IAM roles for:
 - The VPC CNI.
 - The AWS Load Balancer Controller.
 
-The CNI policy was removed from the node roles after Pod Identity credential retrieval was verified.
+The CNI policy was removed from the node roles after Pod Identity credential retrieval was verified. Recreating node groups now requires explicitly enabling temporary CNI bootstrap access; see [CNI bootstrap](docs/cni-bootstrap.md).
 
 A temporary installation role was used for the controller's cluster-scoped resources. Its EKS access and runner assume-role permission were removed after installation.
 
@@ -292,39 +292,36 @@ The gateway `/healthz` endpoint checks gateway health locally. It does not verif
 
 ## Setup and reproduction
 
-This repository contains a deployed lab configuration, not a one-command portable installation.
+Follow the [step-by-step recreation runbook](docs/reproduction.md) for clone,
+GitHub bootstrap settings, private runner registration, temporary installer
+access, application deployment, validation and teardown. The [CNI bootstrap
+procedure](docs/cni-bootstrap.md) explains the temporary permission transition.
 
-Prerequisites include:
+The original environment has been deleted. The revised recreation path has
+local automated checks but has not yet been verified by a fresh AWS deployment.
+Do not treat the historical screenshots as evidence for this revision.
 
-- An AWS account with the required permissions.
-- GitHub Actions and repository access.
-- Terraform and AWS CLI for preparation and diagnostics.
-- An AWS bootstrap session.
-- Network and address-space planning.
-- A GitHub Environment named `bootstrap`.
+Generated subnet, VPC and security-group IDs are no longer copied from the
+old lab. Controllers discover tagged subnets; installation and cleanup resolve
+VPCs through EKS; backend deployment resolves its ALB security group; gateway
+deployment reads the current backend Ingress hostname. Image digests are
+rendered by the existing build-and-deploy workflows.
 
-Deployment order:
-
-1. Review account, region, CIDRs, role names and hardcoded resource references.
-2. Create and protect the S3 state bucket with the bootstrap workflow.
-3. Configure the Terraform backend and bootstrap environment secrets.
-4. Deploy infrastructure through GitHub Actions in stages.
-5. Register the private runner with GitHub and install its system service.
-6. Install and verify the runner tooling.
-7. Verify private API connectivity and EKS access.
-8. Temporarily enable controller installation access.
-9. Install the AWS Load Balancer Controller in both clusters.
-10. Remove the temporary installation access.
-11. Build and deploy the backend.
-12. Update the gateway's backend URL using the internal ALB hostname.
-13. Build and deploy the gateway.
-14. Repeat positive and negative connectivity checks.
-
-Runner registration was performed manually. Its registration is not recreated automatically by Terraform.
-
-A new environment requires updating account-specific values, subnet IDs, security-group references and the backend ALB hostname. ALB names can change when Ingress resources are recreated.
+The defaults still intentionally target account `485378272094`, region
+`eu-north-1`, the documented CIDRs and cluster names. This is an account-scoped
+lab, not an arbitrary-account turnkey installer. Registration of the runner
+and copying short-lived bootstrap credentials remain explicit manual steps.
 
 ## Trade-offs and limitations
+
+Within the three-day challenge, the priority was a working private request
+path, least-privilege boundaries and Actions-based provisioning. The initial
+implementation used manual runner registration and copied environment IDs
+to complete and validate the demonstration. This revision removes those
+generated-ID dependencies and documents bootstrap. Automatic runner
+registration, fully automated credential federation, production TLS,
+observability and controlled failure testing remain outside that scope.
+
 
 | Decision | Benefit | Cost or limitation |
 |---|---|---|
@@ -347,7 +344,7 @@ Additional production improvements would include:
 - Stronger workload isolation and validated NetworkPolicies.
 - PR checks for workflows, manifests and application builds.
 - A reviewed release and rollback strategy.
-- Automated configuration discovery for recreated environments.
+- Broader account/region portability beyond the documented lab configuration.
 - Monitoring, alerting and log retention.
 - Load testing and controlled failure testing.
 - Image vulnerability review and supply-chain hardening.

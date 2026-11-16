@@ -7,6 +7,7 @@ on:
     paths:
       - "apps/gateway/**"
       - "k8s/gateway/**"
+      - "scripts/render-environment.py"
       - ".github/workflows/build-gateway.yml"
   workflow_dispatch:
 
@@ -220,7 +221,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          cp k8s/gateway/gateway.yml "$DEPLOYMENT_DIR/gateway.yml"
+          backend_hostname=""
+          for attempt in {1..60}; do
+            backend_hostname="$(kubectl --kubeconfig "$DEPLOYMENT_DIR/backend-kubeconfig" \
+              -n default get ingress sentinel-backend \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
+              --request-timeout=20s)"
+            if [ -n "$backend_hostname" ]; then break; fi
+            sleep 5
+          done
+          export BACKEND_URL="http://$backend_hostname"
+          python3 scripts/render-environment.py gateway \
+            k8s/gateway/gateway.yml "$DEPLOYMENT_DIR/gateway.yml"
 
           cat > "$DEPLOYMENT_DIR/kustomization.yaml" <<EOF
           apiVersion: kustomize.config.k8s.io/v1beta1

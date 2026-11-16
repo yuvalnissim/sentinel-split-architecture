@@ -28,16 +28,13 @@ jobs:
       matrix:
         include:
           - cluster: eks-gateway
-            vpc: vpc-0940cc90a288b5995
           - cluster: eks-backend
-            vpc: vpc-0349516895f0bda08
 
     env:
       AWS_REGION: eu-north-1
       AWS_DEFAULT_REGION: eu-north-1
       AWS_PAGER: ""
       CLUSTER_NAME: ${{ matrix.cluster }}
-      VPC_ID: ${{ matrix.vpc }}
       INSTALLER_ROLE_ARN: arn:aws:iam::485378272094:role/sentinel-controller-installer
 
     steps:
@@ -69,6 +66,10 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          vpc_id="$(aws eks describe-cluster --name "$CLUSTER_NAME" \
+            --query 'cluster.resourcesVpcConfig.vpcId' --output text)"
+          [[ "$vpc_id" =~ ^vpc-[a-f0-9]+$ ]]
+          echo "VPC_ID=$vpc_id" >> "$GITHUB_ENV"
 
           aws eks update-kubeconfig \
             --name "$CLUSTER_NAME" \
