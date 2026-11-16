@@ -62,6 +62,8 @@ def completion_policy(cluster_sgs, alb_sg, volume_id):
           [f"arn:aws:iam::{ACCOUNT}:role/eks-*",
            f"arn:aws:iam::{ACCOUNT}:role/sentinel-*",
            f"arn:aws:iam::{ACCOUNT}:instance-profile/sentinel-*"])
+    allow("ReadExistingNodegroupServiceRole", ["iam:GetRole"],
+          [f"arn:aws:iam::{ACCOUNT}:role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup"])
     allow("ReadReferencedPolicies", ["iam:GetPolicy", "iam:GetPolicyVersion",
           "iam:ListPolicyVersions", "iam:ListPolicyTags"],
           [f"arn:aws:iam::{ACCOUNT}:policy/sentinel-*", "arn:aws:iam::aws:policy/*"])
@@ -83,6 +85,12 @@ def completion_policy(cluster_sgs, alb_sg, volume_id):
           "ec2:AuthorizeSecurityGroupEgress"],
           [f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group/{sg}"
            for sg in sorted(set(cluster_sgs + [alb_sg]))])
+    # Tagged rule creation authorizes BOTH the parent group and the new rule.
+    # Parent groups remain restricted by CompleteNetworkRules above.
+    allow("AuthorizeNewNetworkRuleResources", ["ec2:AuthorizeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress"],
+          [f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group-rule/*"],
+          {"StringEquals": {"aws:RequestTag/Project": PROJECT}})
     allow("TagNewNetworkRules", ["ec2:CreateTags"],
           [f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group-rule/*"],
           {"StringEquals": {"aws:RequestTag/Project": PROJECT}})
