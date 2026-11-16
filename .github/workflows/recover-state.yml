@@ -1,0 +1,77 @@
+name: Recover interrupted Sentinel state
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Confirm no Terraform run is active, then type RECOVER-SENTINEL"
+        required: true
+        type: string
+      failed_run_id:
+        description: "Numeric Actions run ID of the completed failed Terraform deploy"
+        required: true
+        type: string
+      credential_expiration:
+        description: "UTC/offset expiration of the exact session in bootstrap secrets (at least 10 minutes left)"
+        required: true
+        type: string
+      stale_lock_id:
+        description: "Reviewed stale lock ID; leave empty only if no lock exists"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sentinel-terraform-state
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RECOVER-SENTINEL'
+    runs-on: ubuntu-latest
+    environment: bootstrap
+    timeout-minutes: 25
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_enable_cni_bootstrap: "true"
+      TF_VAR_enable_controller_bootstrap: "true"
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_PAGER: ""
+      CONFIRMATION: ${{ inputs.confirmation }}
+      FAILED_RUN_ID: ${{ inputs.failed_run_id }}
+      CREDENTIAL_EXPIRATION: ${{ inputs.credential_expiration }}
+      STALE_LOCK_ID: ${{ inputs.stale_lock_id }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.6"
+          terraform_wrapper: false
+      - name: Initialize existing backend
+        run: terraform init -input=false -lockfile=readonly
+      - name: Test recovery logic
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Verify inventory, back up and import missing state bindings
+        run: python3 scripts/recover-sentinel-state.py
+      - name: Attempt protected S3 backup if state persistence fails
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f errored.tfstate ]; then
+            echo "An errored.tfstate exists. Attempting protected S3 recovery backup."
+            aws s3api put-object \
+              --bucket sentinel-tfstate-485378272094-eu-north-1 \
+              --key "sentinel/recovery/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT/errored.tfstate" \
+              --body errored.tfstate --server-side-encryption AES256
+          fi

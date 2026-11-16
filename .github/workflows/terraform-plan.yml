@@ -8,6 +8,7 @@ on:
       - "**/*.tf"
       - "modules/eks/policies/**"
       - "scripts/check-cni-bootstrap-plan.py"
+      - "scripts/check-credential-lifetime.py"
       - "tests/**"
       - ".terraform.lock.hcl"
       - ".github/workflows/terraform-plan.yml"
@@ -50,12 +51,16 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       AWS_PAGER: ""
+      AWS_CREDENTIAL_EXPIRATION: ${{ vars.AWS_CREDENTIAL_EXPIRATION }}
 
     steps:
       - name: Download repository
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Check bootstrap credential lifetime
+        run: python3 scripts/check-credential-lifetime.py 3300
 
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
@@ -99,6 +104,9 @@ jobs:
           set -euo pipefail
           terraform show -json deployment.tfplan |
             python3 scripts/check-cni-bootstrap-plan.py
+
+      - name: Recheck lifetime before infrastructure changes
+        run: python3 scripts/check-credential-lifetime.py 2700
 
       - name: Apply saved plan
         run: |
