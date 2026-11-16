@@ -40,6 +40,22 @@ class CompletionPolicyTests(unittest.TestCase):
         self.assertTrue(all("*" not in resource for resource in resources))
         self.assertTrue(self.statements["ReconcileImportedRunnerVolumeTags"]["Resource"][0].endswith("/vol-root"))
 
+    def test_tagged_creation_authorizes_both_resource_types(self):
+        parent = self.statements["CompleteNetworkRules"]
+        rule = self.statements["AuthorizeNewNetworkRuleResources"]
+        self.assertEqual(set(parent["Action"]), set(rule["Action"]))
+        self.assertTrue(all("security-group/sg-" in r for r in parent["Resource"]))
+        self.assertEqual(rule["Resource"], [f"arn:aws:ec2:{module.REGION}:{module.ACCOUNT}:security-group-rule/*"])
+        self.assertEqual(rule["Condition"]["StringEquals"]["aws:RequestTag/Project"], module.PROJECT)
+
+    def test_service_linked_role_is_read_only_and_exact(self):
+        statement = self.statements["ReadExistingNodegroupServiceRole"]
+        self.assertEqual(statement["Action"], ["iam:GetRole"])
+        self.assertEqual(statement["Resource"], [f"arn:aws:iam::{module.ACCOUNT}:role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup"])
+        for other in self.policy["Statement"]:
+            if other["Sid"] != statement["Sid"]:
+                self.assertFalse(any("aws-service-role/" in r for r in other["Resource"]))
+
     def test_passrole_is_not_wildcard(self):
         statement = self.statements["PassOnlyExistingWorkloadRoles"]
         self.assertEqual(len(statement["Resource"]), 6)

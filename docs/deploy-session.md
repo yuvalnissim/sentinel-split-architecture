@@ -63,8 +63,12 @@ Mutation permissions cover additions from the reviewed recovery plan:
 - EKS node groups, add-ons, access entries, access-policy associations, Pod
   Identity associations, and tags, within the two named clusters.
 - Passing only the existing six node/CNI/controller roles to EKS/Pod Identity.
+- Reading the exact existing EKS Nodegroup service-linked role with `iam:GetRole`,
+  without permission to create, change, or pass that AWS-managed role.
 - Adding rules to the two cluster security groups and the backend ALB group,
-  whose IDs are discovered and validated during bootstrap.
+  whose IDs are discovered and validated during bootstrap. Tagged creation also
+  authorizes the new regional rule resource with the project request tag; the
+  separate parent-group authorization remains limited to those three groups.
 - Updating inline policies on the existing private runner role, as required for
   its missing cluster-discovery policy. IAM scopes this permission to the role,
   not to an individual inline-policy name; this is a documented trust boundary.
