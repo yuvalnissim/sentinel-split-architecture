@@ -27,3 +27,9 @@ variable "runner_security_group_id" {
   description = "Security group allowed to reach the private Kubernetes API."
   type        = string
 }
+
+variable "enable_cni_bootstrap" {
+  description = "Temporarily grant node roles CNI permissions during initial cluster creation. Disable after verifying CNI Pod Identity."
+  type        = bool
+  default     = false
+}

@@ -84,8 +84,7 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internal
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-    alb.ingress.kubernetes.io/subnets: subnet-01e79b83d4446cb73,subnet-0681b2828862fa803
-    alb.ingress.kubernetes.io/security-groups: sg-05183855e3e10a473
+    alb.ingress.kubernetes.io/security-groups: REPLACE_BACKEND_ALB_SECURITY_GROUP_ID
     alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
     alb.ingress.kubernetes.io/healthcheck-path: /healthz
     alb.ingress.kubernetes.io/success-codes: "200"

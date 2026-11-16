@@ -133,6 +133,14 @@ controllers.
 Credential retrieval through the dedicated CNI roles was verified before
 removing the CNI policy from the node roles.
 
+The recreation workflow now exposes an explicit `enable_cni_bootstrap`
+input. Initial or replacement node groups receive temporary node-role CNI
+permissions when this input is enabled. The plan guard rejects creation
+without these permissions. After verifying the dedicated CNI identities,
+a second Actions run with the input disabled removes the temporary policy.
+See [CNI bootstrap](cni-bootstrap.md). This revised bootstrap path still
+requires validation in a newly provisioned AWS environment.
+
 ## Controller installation access
 
 Installing the controller required cluster-scoped Kubernetes resources.
@@ -302,19 +310,19 @@ Recreation requires:
 
 - Recreating the remote state bucket.
 - Restoring valid bootstrap credentials.
-- Reviewing account-specific and hardcoded resource references.
+- Reviewing the account-scoped defaults documented in the recreation runbook.
 - Re-enabling the required deployment workflows.
 - Deploying infrastructure through GitHub Actions.
 - Registering and preparing the private runner.
 - Installing controllers using temporary installation access.
 - Building and deploying the applications.
-- Updating the gateway backend URL if the internal ALB hostname changes.
+- Discovering the current backend Ingress hostname during gateway deployment.
 - Repeating connectivity and access-restriction checks.
 
 ## Future operational improvements
 
 - Add PR checks for application code, manifests and workflow YAML.
-- Reduce hardcoded environment references for recreation.
+- Extend portability beyond the original account, region, CIDRs and cluster names.
 - Define release promotion, rollback and stale-rerun handling.
 - Add a non-destructive inspection mode for cleanup.
 - Improve credential-lifetime checks before lengthy operations.
@@ -325,3 +333,17 @@ Recreation requires:
 TLS, application authentication, NetworkPolicy enforcement, observability,
 supply-chain checks and broader resilience testing remain outside the
 completed functional demonstration.
+## Recreation implementation update
+
+See [the reproduction runbook](reproduction.md) for the complete operational
+sequence. Generated VPC IDs are resolved from EKS during controller
+installation and cleanup. Ingress subnet selection uses Terraform-managed
+subnet tags. Backend deployment discovers its ALB group by VPC and exact
+group name; the runner receives region-constrained DescribeSecurityGroups
+permission for that read. Gateway deployment reads the backend Ingress
+hostname and rejects missing or unexpected values before rendering.
+
+The controller installer is now an explicit Terraform input, enabled only
+for bootstrap/maintenance and removed in the final steady-state run.
+These revisions have not yet been exercised by a fresh AWS provisioning run.
+Historical evidence describes the original, successfully destroyed lab.

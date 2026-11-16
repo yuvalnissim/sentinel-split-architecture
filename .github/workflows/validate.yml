@@ -52,3 +52,6 @@ jobs:
 
       - name: Lint Terraform and modules
         run: tflint --recursive --format compact
+
+      - name: Test bootstrap and environment rendering
+        run: python3 -m unittest discover -s tests -p 'test_*.py'

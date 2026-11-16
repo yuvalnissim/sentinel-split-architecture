@@ -11,6 +11,7 @@ module "eks" {
   )
 
   runner_security_group_id = module.runner.security_group_id
+  enable_cni_bootstrap     = var.enable_cni_bootstrap
 
   depends_on = [
     module.peering,

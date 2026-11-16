@@ -7,6 +7,7 @@ on:
     paths:
       - "apps/backend/**"
       - "k8s/backend/**"
+      - "scripts/render-environment.py"
       - ".github/workflows/build-backend.yml"
   workflow_dispatch:
 
@@ -160,7 +161,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          cp k8s/backend/backend.yml "$DEPLOYMENT_DIR/backend.yml"
+          backend_vpc="$(aws eks describe-cluster --name eks-backend \
+            --query 'cluster.resourcesVpcConfig.vpcId' --output text)"
+          backend_sg="$(aws ec2 describe-security-groups \
+            --filters "Name=vpc-id,Values=$backend_vpc" \
+              "Name=group-name,Values=sentinel-backend-alb" \
+            --query 'SecurityGroups[].GroupId' --output text)"
+          export BACKEND_ALB_SECURITY_GROUP_ID="$backend_sg"
+          python3 scripts/render-environment.py backend \
+            k8s/backend/backend.yml "$DEPLOYMENT_DIR/backend.yml"
 
           cat > "$DEPLOYMENT_DIR/kustomization.yaml" <<EOF
           apiVersion: kustomize.config.k8s.io/v1beta1

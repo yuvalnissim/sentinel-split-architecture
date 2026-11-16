@@ -33,7 +33,7 @@ spec:
           image: 485378272094.dkr.ecr.eu-north-1.amazonaws.com/sentinel/gateway@sha256:6b36c51f3fda99d8c9632340854be41601cfdb9251298b0628d5ec9008490e9a
           env:
             - name: BACKEND_URL
-              value: http://internal-k8s-default-sentinel-56383b7c00-1517870527.eu-north-1.elb.amazonaws.com
+              value: http://backend.invalid
             - name: DNS_RESOLVER
               value: "10.30.0.2"
           ports:
@@ -101,7 +101,6 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-    alb.ingress.kubernetes.io/subnets: subnet-04cf3c394fa408032,subnet-098583d57858e7aa0
     alb.ingress.kubernetes.io/inbound-cidrs: 0.0.0.0/0
     alb.ingress.kubernetes.io/healthcheck-path: /healthz
     alb.ingress.kubernetes.io/success-codes: "200"
