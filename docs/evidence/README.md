@@ -57,3 +57,11 @@ project VPC, and no active project-tagged EC2 instances.
 
 The separately bootstrapped S3 state bucket was subsequently emptied
 and deleted. The application endpoints shown above are no longer active.
+
+## Recreation and final closure: 16-17 November
+
+The screenshots above remain evidence of the original lab. The separate
+[recreation validation record](recreation-validation.md) describes the later
+recreation, state recovery, successful request path, removal of temporary
+permissions and final teardown on 17 November. Both demonstration environments
+have been removed; their URLs are historical.
