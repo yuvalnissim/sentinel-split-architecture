@@ -1,0 +1,101 @@
+name: Finish remaining EIP teardown
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type RELEASE-SENTINEL-EIPS to release the two reviewed unassociated addresses"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-terraform-state
+  cancel-in-progress: false
+
+jobs:
+  finish:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE-SENTINEL-EIPS'
+    runs-on: ubuntu-latest
+    environment: bootstrap
+    timeout-minutes: 10
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      AWS_REGION: eu-north-1
+      AWS_DEFAULT_REGION: eu-north-1
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_CREDENTIAL_EXPIRATION: ${{ vars.AWS_CREDENTIAL_EXPIRATION }}
+      AWS_PAGER: ""
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify lifetime and identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check-credential-lifetime.py 900
+          identity="$(aws sts get-caller-identity --query Arn --output text)"
+          case "$identity" in
+            arn:aws:sts::485378272094:assumed-role/sentinel-terraform-teardown/*) ;;
+            *) echo "Expected the restricted teardown role"; exit 1 ;;
+          esac
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.6"
+          terraform_wrapper: false
+      - name: Initialize existing state
+        run: terraform init -input=false -lockfile=readonly
+      - name: Verify remaining state and unassociated AWS addresses
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform state pull | python3 scripts/check-remaining-eips.py state
+          aws ec2 describe-addresses \
+            --allocation-ids eipalloc-025f4933c6b09de75 eipalloc-0565f9a2884255c73 \
+            --output json | python3 scripts/check-remaining-eips.py addresses
+      - name: Refresh and plan remaining destruction
+        run: |
+          terraform plan -destroy -input=false -no-color \
+            -lock-timeout=60s -out=remaining-eips.tfplan
+      - name: Verify only unassociated reviewed EIPs will be deleted
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform show -json remaining-eips.tfplan |
+            python3 scripts/check-remaining-eips.py plan
+          python3 scripts/check-credential-lifetime.py 600
+      - name: Apply reviewed EIP destruction plan
+        run: |
+          timeout --signal=INT --kill-after=60s 4m terraform apply \
+            -input=false -no-color -lock-timeout=60s remaining-eips.tfplan
+      - name: Verify empty managed state and released addresses
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform state pull | python3 scripts/check-remaining-eips.py empty
+          remaining="$(aws ec2 describe-addresses \
+            --filters Name=allocation-id,Values=eipalloc-025f4933c6b09de75,eipalloc-0565f9a2884255c73 \
+            --query 'length(Addresses)' --output text)"
+          test "$remaining" = "0"
+          echo "Both reviewed EIPs released; no managed resources remain in state."
+      - name: Preserve emergency state in private backend
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f errored.tfstate ]; then
+            aws s3 cp errored.tfstate \
+              "s3://sentinel-tfstate-485378272094-eu-north-1/sentinel/recovery/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT/errored.tfstate" \
+              --sse AES256 --only-show-errors
+          fi
+      - name: Remove saved plan
+        if: always()
+        run: rm -f remaining-eips.tfplan

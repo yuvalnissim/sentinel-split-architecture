@@ -1,13 +1,13 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("BootstrapRole", "Deploy", "RemoveCniBootstrap", "RemoveInstallerAccess", "BootstrapTeardown", "Teardown")]
+    [ValidateSet("BootstrapRole", "Deploy", "RemoveCniBootstrap", "RemoveInstallerAccess", "BootstrapTeardown", "Teardown", "FinishEips")]
     [string]$Mode
 )
 
 $ErrorActionPreference = "Stop"
 $sentinelRepo = "yuvalnissim/sentinel-split-architecture"
 $sentinelRoleArn = "arn:aws:iam::485378272094:role/sentinel-terraform-deployer"
-if ($Mode -eq "Teardown") {
+if ($Mode -in @("Teardown", "FinishEips")) {
     $sentinelRoleArn = "arn:aws:iam::485378272094:role/sentinel-terraform-teardown"
 }
 
@@ -65,6 +65,9 @@ if ($Mode -eq "BootstrapRole") {
 } elseif ($Mode -eq "BootstrapTeardown") {
     gh workflow run bootstrap-teardown-session.yml --repo $sentinelRepo --ref main `
         -f confirmation=PREPARE-SENTINEL-TEARDOWN
+} elseif ($Mode -eq "FinishEips") {
+    gh workflow run finish-eip-teardown.yml --repo $sentinelRepo --ref main `
+        -f confirmation=RELEASE-SENTINEL-EIPS
 } elseif ($Mode -eq "Teardown") {
     gh workflow run cleanup.yml --repo $sentinelRepo --ref main `
         -f confirmation=DESTROY-SENTINEL
