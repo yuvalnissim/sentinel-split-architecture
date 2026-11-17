@@ -83,8 +83,27 @@ against the live AWS APIs. Stop on AccessDenied and review the exact missing
 action rather than adding wildcard write permissions.
 
 After successful completion, verify CNI Pod Identity before removing temporary
-node CNI permissions. Removing installer access and other cleanup requires a
-separately reviewed authorized identity; this completion role is not sufficient.
+node CNI permissions. The completion role also supports two narrowly scoped cleanup stages after
+re-running BootstrapRole to discover the existing installer access-entry ARNs:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Start-SentinelDeployment.ps1 -Mode RemoveCniBootstrap
+```
+
+Wait for success, then restart aws-node and verify ready nodes, new Pods and the
+public-to-private request path. Only after those checks pass:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Start-SentinelDeployment.ps1 -Mode RemoveInstallerAccess
+```
+
+Stage one detaches only AmazonEKS_CNI_Policy from the two exact node roles.
+Stage two removes only the discovered installer access entries and their policy
+associations, the exact installer IAM role, and its inline assume-role link on
+the runner. IAM cannot restrict DeleteRolePolicy to one inline-policy name;
+this permission is scoped to the runner role and is used by reviewed Terraform.
+Do not use Deploy mode after these cleanup stages: it re-enables both temporary
+flags. Other infrastructure destruction remains outside this role's scope.
 The role is bootstrapped outside the root Terraform state, like state storage.
 At the end of the exercise, delete its inline policy and role through a reviewed
 Actions cleanup step using the bootstrap identity, and delete the bootstrap
