@@ -141,7 +141,8 @@ Wait for SSM registration; use the EC2/SSM consoles if it is not yet online.
 In its Bash session:
 
 ```bash
-sudo dnf install -y git curl tar gzip unzip libicu
+sudo dnf install -y git tar gzip unzip libicu
+curl --version
 aws --version
 sudo -iu ssm-user
 mkdir -p ~/actions-runner
@@ -356,3 +357,22 @@ Remove the destroyed runner's GitHub registration and all three bootstrap
 secrets. Record teardown evidence. Do not claim zero account-wide charges
 from an empty project state: unrelated resources and retained storage require
 their own checks.
+
+## Validation update: 17 November 2026
+
+The new environment completed the application and post-bootstrap checks; see
+[the validation record](evidence/recreation-validation.md). Its initial apply
+required state recovery, so successful recreation must not be described as
+an unattended first-pass success.
+
+For this account's `aws login` authentication, follow [deployment sessions](deploy-session.md).
+Copying exported login credentials to Actions secrets does not copy automatic
+refresh. The completion role provides one-hour sessions for the recovered
+environment and the two bootstrap-cleanup modes; it is not a general
+provisioning or teardown identity. Do not invoke `Deploy` mode after removing
+temporary access unless intentionally restoring both bootstrap flags.
+
+The Amazon Linux runner already provides curl-minimal. Install the remaining
+runner dependencies without requesting the conflicting full curl package.
+Linux preparation commands run in Session Manager on EC2; Git/GitHub CLI
+commands shown for local PowerShell run on the operator's Windows computer.
