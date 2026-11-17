@@ -107,5 +107,10 @@ bootstrap=true, investigate the Pod Identity path, then repeat verification.
 Do not perform local Terraform apply, bypass the SCP, or add permanent CNI
 permissions to the node roles.
 
-This code path has local plan-guard tests. A clean AWS creation and the
-post-removal network checks have not yet been rerun for this revision.
+The post-removal checks were completed in both clusters on 17 November 2026:
+aws-node restarted and rolled out successfully, all four nodes were Ready,
+both application Deployments created replacement Pods successfully, and the
+public gateway returned `Hello from backend`. The request also succeeded after
+removing installer access. The preceding recreation required state recovery;
+this is not evidence of an unattended, failure-free clean creation. See
+[recreation validation](evidence/recreation-validation.md).

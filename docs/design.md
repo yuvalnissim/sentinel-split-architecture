@@ -2,18 +2,19 @@
 
 ## Project lifecycle
 
-The lab was deployed and validated successfully, then destroyed on
-12 November 2026.
+The original lab was deployed and validated, then destroyed on
+12 November 2026. Its state bucket was subsequently emptied and deleted.
 
-The architecture below describes the validated environment. Its application
-endpoints are no longer active.
+A new environment was provisioned through GitHub Actions on 16-17 November.
+An expired-credential interruption required state recovery and permission
+corrections before the deployment completed. Both applications were deployed,
+CNI Pod Identity was verified, temporary node CNI permissions and installer
+access were removed, and the final external request returned
+`Hello from backend` on 17 November.
 
-The ordered teardown workflow completed successfully and verified an empty
-Terraform state. Follow-up AWS checks returned no EKS clusters, neither
-project VPC, and no active project-tagged EC2 instances.
-
-The separately bootstrapped S3 state bucket was subsequently emptied and
-deleted, including its object versions and delete markers.
+The recreated environment was active at the last validation. Its teardown is
+pending. Historical empty-state checks apply only to the original lab.
+See [the validation record](evidence/recreation-validation.md).
 
 ## Goal
 
@@ -345,5 +346,8 @@ hostname and rejects missing or unexpected values before rendering.
 
 The controller installer is now an explicit Terraform input, enabled only
 for bootstrap/maintenance and removed in the final steady-state run.
-These revisions have not yet been exercised by a fresh AWS provisioning run.
-Historical evidence describes the original, successfully destroyed lab.
+These revisions were exercised during the 16-17 November recreation,
+including recovery from an interrupted apply. CNI and application rollouts
+passed after removing node-role CNI fallback permissions. The external request
+path also passed after removing installer access. This does not establish an
+unattended, failure-free bootstrap; see the validation record for limitations.

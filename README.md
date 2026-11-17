@@ -12,14 +12,26 @@ Hello from backend
 
 ## Project status
 
-The infrastructure and applications were deployed and validated successfully.
-The lab environment was destroyed on 12 November 2026 after validation.
-The application endpoints are no longer active.
+The original lab was deployed, validated and destroyed on 12 November 2026,
+including its separately bootstrapped state bucket.
 
-The teardown workflow completed successfully and verified an empty Terraform
-state. Follow-up AWS checks returned no EKS clusters, neither project VPC,
-and no active project-tagged EC2 instances. The separately bootstrapped S3
-state bucket was subsequently emptied and deleted.
+A new environment was provisioned on 16-17 November 2026 through GitHub
+Actions. The first apply was interrupted by expired credentials and required
+state recovery. After corrective changes, infrastructure deployment,
+controller installation, application deployment and end-to-end HTTP checks
+succeeded. This demonstrates completed recreation with documented recovery,
+not an unattended, failure-free creation from an empty account.
+
+On 17 November, dedicated CNI Pod Identity was verified in both clusters.
+Temporary node CNI permissions were removed, aws-node and application Pods
+were restarted successfully, and all four nodes remained Ready. Temporary
+controller installer access was then removed through Terraform. A final
+external request still returned `Hello from backend`.
+
+The recreated environment is active as of that validation. Its teardown is
+pending; the successful 12 November teardown applies only to the original lab.
+See [recreation validation](docs/evidence/recreation-validation.md) and the
+[deployment session guide](docs/deploy-session.md).
 
 Verified capabilities include:
 
@@ -297,9 +309,10 @@ GitHub bootstrap settings, private runner registration, temporary installer
 access, application deployment, validation and teardown. The [CNI bootstrap
 procedure](docs/cni-bootstrap.md) explains the temporary permission transition.
 
-The original environment has been deleted. The revised recreation path has
-local automated checks but has not yet been verified by a fresh AWS deployment.
-Do not treat the historical screenshots as evidence for this revision.
+Recreation and the post-bootstrap application path were verified on
+16-17 November 2026, with an interrupted apply and recovery as documented in
+[recreation validation](docs/evidence/recreation-validation.md). The original
+screenshots remain historical evidence; they are not captures of the new run.
 
 Generated subnet, VPC and security-group IDs are no longer copied from the
 old lab. Controllers discover tagged subnets; installation and cleanup resolve
