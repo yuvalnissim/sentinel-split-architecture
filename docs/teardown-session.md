@@ -91,3 +91,30 @@ GitHub runner registration, disable mutating workflows, and remove bootstrap
 secrets and the expiration variable. Delete all state bucket versions and
 delete markers only after final inventory verification. Existing unrelated
 account resources are outside the project's cleanup scope.
+
+## Finish the two remaining unassociated EIPs (17 November incident)
+
+The first destroy removed both VPCs and NAT gateways, but failed while trying
+to disassociate the NAT EIPs using association IDs captured before NAT removal.
+Subsequent live inventory showed both addresses unassociated; remote state
+contained only the two managed aws_eip objects. Do not rerun the full workflow
+or bootstrap the teardown role again: their cluster/VPC prerequisites no
+longer exist.
+
+The manual **Finish remaining EIP teardown** workflow uses the existing teardown
+role's ReleaseAddress permission. It verifies the exact two managed bindings
+and unassociated AWS addresses, refreshes during plan, and rejects any other
+managed action or any remaining association in the refreshed plan. No new
+DisassociateAddress permission is added. A successful run verifies both
+allocations are gone and managed state is empty.
+
+After merging the targeted recovery and reviewing its guards, use local
+PowerShell to refresh credentials and dispatch it:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Start-SentinelDeployment.ps1 -Mode FinishEips
+```
+
+This mode releases only eipalloc-025f4933c6b09de75 and
+eipalloc-0565f9a2884255c73 through Terraform in Actions. State storage,
+bootstrap IAM roles and GitHub runner registration still need final closure.
