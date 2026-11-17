@@ -108,3 +108,7 @@ The role is bootstrapped outside the root Terraform state, like state storage.
 At the end of the exercise, delete its inline policy and role through a reviewed
 Actions cleanup step using the bootstrap identity, and delete the bootstrap
 secrets and expiration variable. Do not delete root Terraform state prematurely.
+
+For destruction of the recreated environment, use the separate
+[scoped teardown session guide](teardown-session.md). The completion role
+remains insufficient for general teardown.
