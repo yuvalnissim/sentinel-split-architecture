@@ -61,21 +61,38 @@ Response:
 Hello from backend
 ```
 
-This hostname belongs to the recreated environment; future recreations must
-read the new Ingress hostname instead of copying it.
+This hostname belonged to the recreated environment and is no longer live.
+Future recreations must read the new Ingress hostname instead of copying it.
 
-## Limits and remaining closure
+## Final teardown and closure: 17 November
+
+The main ordered teardown stopped at two Elastic IPs. AWS inventory showed
+both allocations were unassociated; remote state contained only those two
+managed instances. A separate guarded finishing workflow refreshed state and
+applied a plan restricted to their deletion. It completed successfully and
+verified zero managed state instances and absence of both allocations.
+
+- [Successful EIP finishing run 44070436700](https://github.com/yuvalnissim/sentinel-split-architecture/actions/runs/44070436700)
+- Follow-up project cluster query: `[]`.
+- Follow-up query for both recreated VPC IDs: `[]`.
+- Follow-up query for nonterminated project-tagged EC2 instances: `[]`.
+- Both node roles had no attached `AmazonEKS_CNI_Policy`; installer-role lookup returned `NoSuchEntity` before teardown.
+- Both temporary deployment/teardown roles and their inline policies were deleted successfully.
+- GitHub bootstrap secrets and `AWS_CREDENTIAL_EXPIRATION` were deleted successfully.
+- The remaining offline runner registration was identified; the operator subsequently confirmed its deletion and state-bucket cleanup, including versions.
+- Terraform, backend, gateway and controller deployment workflows are disabled. Static validation is retained.
+
+The state bucket was deleted only after infrastructure cleanup and empty-state
+verification. State and credentials are not committed as evidence. The project
+endpoint is no longer available. These checks do not constitute an account-wide
+resource inventory or a final billing reconciliation.
+
+## Validation limits
 
 - Recreation completed after recovery and fixes; unattended first-pass
   recreation has not been demonstrated.
 - This validation did not repeat the original direct-backend negative tests
   from the local client and runner. Historical failures are separate evidence.
 - No load or controlled AZ-failure tests were performed.
-- Successful cleanup workflows are the recorded evidence of permission
-  removal; a separate AWS IAM/access-entry inventory audit is not included.
-- The environment was active at the final request on 17 November. Teardown of
-  this environment has not yet been recorded. The completion role cannot
-  perform general teardown; an authorized teardown identity is required.
-- Preserve remote state until all managed resources are verified removed.
-  The separately bootstrapped completion role, its inline policy and GitHub
-  runner registration also require explicit final cleanup.
+- The node-role policy and installer-role checks supplement workflow results;
+  a comprehensive audit of all Kubernetes access entries was not recorded.

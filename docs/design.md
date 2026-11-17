@@ -12,8 +12,12 @@ CNI Pod Identity was verified, temporary node CNI permissions and installer
 access were removed, and the final external request returned
 `Hello from backend` on 17 November.
 
-The recreated environment was active at the last validation. Its teardown is
-pending. Historical empty-state checks apply only to the original lab.
+The recreated environment was removed on 17 November. A separate guarded
+workflow finished two remaining unassociated Elastic IPs after the main
+teardown stopped. Empty managed state and subsequent AWS inventory checks
+confirmed removal of the project clusters, VPCs and nonterminated tagged
+instances. Temporary bootstrap roles, runner registration and credentials
+were removed, and the operator confirmed state-bucket deletion.
 See [the validation record](evidence/recreation-validation.md).
 
 ## Goal
@@ -280,7 +284,7 @@ for review.
 The GitHub-hosted runner performs infrastructure destruction because the
 private runner itself is part of the infrastructure being deleted.
 
-## Teardown observations
+## Original lab teardown observations: 12 November
 
 The first gateway Ingress deletion attempt timed out. Subsequent checks
 confirmed that both the Ingress and its ALB had disappeared. The failed
@@ -302,6 +306,25 @@ emptied and deleted separately after infrastructure destruction.
 
 GitHub runner registration and environment secrets are separate from AWS
 infrastructure and require separate administrative cleanup.
+
+## Recreated environment teardown: 17 November
+
+The ordered cleanup removed application and infrastructure resources but
+stopped while deleting two Elastic IPs because the teardown role did not
+permit DisassociateAddress. Subsequent AWS checks showed both addresses
+were already unassociated. The dedicated finishing workflow refreshed state,
+required exactly those two allocations with no associations, accepted only
+their deletion in the saved plan, and verified empty managed state and absence
+of both allocations afterward. No additional disassociation permission was
+granted.
+
+Follow-up queries returned no project EKS clusters, neither recreated VPC,
+and no nonterminated project-tagged EC2 instances. Both separately
+bootstrapped temporary IAM roles and their inline policies were deleted.
+GitHub bootstrap secrets, the expiration variable and the offline runner
+registration were removed. The operator confirmed that the versioned S3
+state bucket was emptied and deleted. Deployment workflows were disabled.
+This records project cleanup, not an account-wide resource or billing audit.
 
 ## Recreation requirements
 

@@ -28,8 +28,17 @@ were restarted successfully, and all four nodes remained Ready. Temporary
 controller installer access was then removed through Terraform. A final
 external request still returned `Hello from backend`.
 
-The recreated environment is active as of that validation. Its teardown is
-pending; the successful 12 November teardown applies only to the original lab.
+The recreated environment was also removed on 17 November 2026. Ordered
+teardown required a separate, guarded workflow to release two remaining
+unassociated Elastic IPs. That workflow succeeded and verified empty managed
+Terraform state. Follow-up AWS queries returned no project clusters, neither
+project VPC and no nonterminated project-tagged EC2 instances.
+
+The two temporary deployment/teardown roles, GitHub runner registration,
+bootstrap credentials and expiration variable were removed. The operator
+confirmed that the versioned state bucket was emptied and deleted. Terraform,
+application and controller deployment workflows are disabled; static validation
+remains available. The demonstration URL is no longer live.
 See [recreation validation](docs/evidence/recreation-validation.md) and the
 [deployment session guide](docs/deploy-session.md).
 
@@ -370,7 +379,11 @@ EKS clusters, worker instances, NAT Gateways, ALBs, storage and other resources 
 Closing a terminal, browser or SSM session does not stop the environment.
 
 The manually triggered cleanup.yml workflow performs ordered teardown.
-It was successfully executed for this lab. The teardown order is:
+The original lab teardown succeeded on 12 November. During the recreated
+environment teardown on 17 November, the main cleanup stopped at two Elastic
+IPs; the guarded `finish-eip-teardown.yml` workflow completed their removal.
+See the [closure evidence](docs/evidence/recreation-validation.md#final-teardown-and-closure-17-november).
+The teardown order is:
 
 1. Stop new application and infrastructure deployment runs.
 2. Delete application Ingress resources while the controllers and worker nodes are still running.
@@ -378,8 +391,9 @@ It was successfully executed for this lab. The teardown order is:
 4. Remove remaining application resources.
 5. Run Terraform destroy through a dedicated GitHub Actions workflow.
 6. Verify that project infrastructure has been removed.
-7. Remove the runner registration from GitHub.
-8. Retain or delete the bootstrap state bucket separately according to the chosen state-retention policy.
+7. Remove separately bootstrapped temporary roles, runner registration and bootstrap secrets.
+8. Retain or delete the bootstrap state bucket, including object versions and delete markers, according to the chosen state-retention policy.
+9. Disable deployment workflows and record closure evidence.
 
 Do not destroy the controllers or clusters before cleaning up their load balancers.
 
