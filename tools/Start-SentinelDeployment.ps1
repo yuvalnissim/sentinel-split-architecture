@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("BootstrapRole", "Deploy")]
+    [ValidateSet("BootstrapRole", "Deploy", "RemoveCniBootstrap", "RemoveInstallerAccess")]
     [string]$Mode
 )
 
@@ -60,8 +60,17 @@ if ($Mode -eq "BootstrapRole") {
     gh workflow run bootstrap-deploy-session.yml --repo $sentinelRepo --ref main `
         -f confirmation=CREATE-SENTINEL-DEPLOY-ROLE
 } else {
+    $sentinelCniFlag = "true"
+    $sentinelControllerFlag = "true"
+    if ($Mode -in @("RemoveCniBootstrap", "RemoveInstallerAccess")) {
+        $sentinelCniFlag = "false"
+    }
+    if ($Mode -eq "RemoveInstallerAccess") {
+        $sentinelControllerFlag = "false"
+    }
     gh workflow run terraform-plan.yml --repo $sentinelRepo --ref main `
-        -f enable_controller_bootstrap=true -f enable_cni_bootstrap=true
+        -f "enable_controller_bootstrap=$sentinelControllerFlag" `
+        -f "enable_cni_bootstrap=$sentinelCniFlag"
 }
 if ($LASTEXITCODE -ne 0) { throw "Workflow dispatch failed" }
 Write-Host "Workflow dispatched. Session expiration: $($sentinelExpiry.ToString('o'))"

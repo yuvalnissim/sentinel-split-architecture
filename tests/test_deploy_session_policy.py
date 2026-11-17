@@ -56,6 +56,24 @@ class CompletionPolicyTests(unittest.TestCase):
             if other["Sid"] != statement["Sid"]:
                 self.assertFalse(any("aws-service-role/" in r for r in other["Resource"]))
 
+    def test_cni_detach_cannot_remove_other_node_policies(self):
+        statement = self.statements["RemoveOnlyTemporaryNodeCniPolicy"]
+        self.assertEqual(statement["Action"], ["iam:DetachRolePolicy"])
+        self.assertEqual(len(statement["Resource"]), 2)
+        self.assertTrue(all(r.endswith("-nodes-role") and "*" not in r for r in statement["Resource"]))
+        self.assertEqual(statement["Condition"]["ArnEquals"]["iam:PolicyARN"],
+                         "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy")
+
+    def test_installer_cleanup_requires_discovered_access_entries(self):
+        self.assertNotIn("RemoveOnlyDiscoveredInstallerAccess", self.statements)
+        arn = f"arn:aws:eks:{module.REGION}:{module.ACCOUNT}:access-entry/eks-gateway/role/{module.ACCOUNT}/sentinel-controller-installer/example"
+        policy = module.completion_policy(["sg-gateway", "sg-backend"], "sg-alb", "vol-root", [arn])
+        statement = next(s for s in policy["Statement"] if s["Sid"] == "RemoveOnlyDiscoveredInstallerAccess")
+        self.assertEqual(statement["Resource"], [arn])
+        self.assertEqual(set(statement["Action"]), {"eks:DeleteAccessEntry", "eks:DisassociateAccessPolicy"})
+        role = self.statements["RemoveTemporaryInstallerRole"]
+        self.assertEqual(role["Resource"], [f"arn:aws:iam::{module.ACCOUNT}:role/sentinel-controller-installer"])
+
     def test_passrole_is_not_wildcard(self):
         statement = self.statements["PassOnlyExistingWorkloadRoles"]
         self.assertEqual(len(statement["Resource"]), 6)

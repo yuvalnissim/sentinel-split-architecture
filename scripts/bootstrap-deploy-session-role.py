@@ -34,7 +34,7 @@ def trust_policy():
     }]}
 
 
-def completion_policy(cluster_sgs, alb_sg, volume_id):
+def completion_policy(cluster_sgs, alb_sg, volume_id, installer_entries=()):
     cluster_arns = [f"arn:aws:eks:{REGION}:{ACCOUNT}:cluster/eks-{d}"
                     for d in ("gateway", "backend")]
     subresources = [f"arn:aws:eks:{REGION}:{ACCOUNT}:{kind}/eks-{d}/*"
@@ -81,6 +81,18 @@ def completion_policy(cluster_sgs, alb_sg, volume_id):
           {"StringEquals": {"iam:PassedToService": ["eks.amazonaws.com", "pods.eks.amazonaws.com"]}})
     allow("InstallRunnerClusterDiscoveryPolicy", ["iam:PutRolePolicy"],
           [f"arn:aws:iam::{ACCOUNT}:role/sentinel-private-runner"])
+    allow("RemoveOnlyTemporaryNodeCniPolicy", ["iam:DetachRolePolicy"],
+          [f"arn:aws:iam::{ACCOUNT}:role/eks-{d}-nodes-role" for d in ("gateway", "backend")],
+          {"ArnEquals": {"iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"}})
+    allow("RemoveTemporaryInstallerRole", ["iam:DeleteRole", "iam:ListInstanceProfilesForRole"],
+          [f"arn:aws:iam::{ACCOUNT}:role/sentinel-controller-installer"])
+    # IAM cannot restrict DeleteRolePolicy by inline-policy name. Only the
+    # existing runner role is authorized; Terraform removes the installer link.
+    allow("RemoveRunnerInstallerLink", ["iam:DeleteRolePolicy"],
+          [f"arn:aws:iam::{ACCOUNT}:role/sentinel-private-runner"])
+    if installer_entries:
+        allow("RemoveOnlyDiscoveredInstallerAccess", ["eks:DeleteAccessEntry",
+              "eks:DisassociateAccessPolicy"], list(installer_entries))
     allow("CompleteNetworkRules", ["ec2:AuthorizeSecurityGroupIngress",
           "ec2:AuthorizeSecurityGroupEgress"],
           [f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group/{sg}"
@@ -140,8 +152,18 @@ def main():
             if b["DeviceName"] == instance["RootDeviceName"]]
     if len(root) != 1:
         raise RuntimeError("Expected one root volume")
+    installer_entries = []
+    for cluster in clusters:
+        try:
+            entry = aws("eks", "describe-access-entry", "--cluster-name", cluster["name"],
+                        "--principal-arn", f"arn:aws:iam::{ACCOUNT}:role/sentinel-controller-installer")["accessEntry"]
+        except RuntimeError as error:
+            if "ResourceNotFoundException" not in str(error):
+                raise
+        else:
+            installer_entries.append(entry["accessEntryArn"])
     policy = completion_policy([c["resourcesVpcConfig"]["clusterSecurityGroupId"]
-                                for c in clusters], groups[0]["GroupId"], root[0])
+                                for c in clusters], groups[0]["GroupId"], root[0], installer_entries)
     encoded_policy = json.dumps(policy, separators=(",", ":"))
     if len(encoded_policy) > 10240:
         raise RuntimeError("Inline role policy exceeds IAM size limit")
