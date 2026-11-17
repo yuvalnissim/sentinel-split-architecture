@@ -1,12 +1,15 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("BootstrapRole", "Deploy", "RemoveCniBootstrap", "RemoveInstallerAccess")]
+    [ValidateSet("BootstrapRole", "Deploy", "RemoveCniBootstrap", "RemoveInstallerAccess", "BootstrapTeardown", "Teardown")]
     [string]$Mode
 )
 
 $ErrorActionPreference = "Stop"
 $sentinelRepo = "yuvalnissim/sentinel-split-architecture"
 $sentinelRoleArn = "arn:aws:iam::485378272094:role/sentinel-terraform-deployer"
+if ($Mode -eq "Teardown") {
+    $sentinelRoleArn = "arn:aws:iam::485378272094:role/sentinel-terraform-teardown"
+}
 
 # Authenticate locally; all infrastructure changes run inside GitHub Actions.
 aws login --profile aws-lab
@@ -20,7 +23,7 @@ if ($sentinelIdentity.Account -ne "485378272094" -or
     throw "Unexpected bootstrap account or role"
 }
 
-if ($Mode -eq "BootstrapRole") {
+if ($Mode -in @("BootstrapRole", "BootstrapTeardown")) {
     $sentinelSessionJson = aws configure export-credentials --profile aws-lab --format process
     if ($LASTEXITCODE -ne 0) { throw "Could not export bootstrap session" }
     $sentinelSession = $sentinelSessionJson | ConvertFrom-Json
@@ -59,6 +62,12 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to update session expiration; do not di
 if ($Mode -eq "BootstrapRole") {
     gh workflow run bootstrap-deploy-session.yml --repo $sentinelRepo --ref main `
         -f confirmation=CREATE-SENTINEL-DEPLOY-ROLE
+} elseif ($Mode -eq "BootstrapTeardown") {
+    gh workflow run bootstrap-teardown-session.yml --repo $sentinelRepo --ref main `
+        -f confirmation=PREPARE-SENTINEL-TEARDOWN
+} elseif ($Mode -eq "Teardown") {
+    gh workflow run cleanup.yml --repo $sentinelRepo --ref main `
+        -f confirmation=DESTROY-SENTINEL
 } else {
     $sentinelCniFlag = "true"
     $sentinelControllerFlag = "true"

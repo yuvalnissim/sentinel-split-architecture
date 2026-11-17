@@ -30,8 +30,17 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       AWS_PAGER: ""
+      AWS_CREDENTIAL_EXPIRATION: ${{ vars.AWS_CREDENTIAL_EXPIRATION }}
 
     steps:
+      - name: Download repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check initial teardown session lifetime
+        run: python3 scripts/check-credential-lifetime.py 3300
+
       - name: Verify AWS credentials and account
         shell: bash
         run: |
@@ -53,6 +62,7 @@ jobs:
       AWS_REGION: eu-north-1
       AWS_DEFAULT_REGION: eu-north-1
       AWS_PAGER: ""
+      AWS_CREDENTIAL_EXPIRATION: ${{ vars.AWS_CREDENTIAL_EXPIRATION }}
 
     steps:
       - name: Verify runner identity
@@ -114,7 +124,7 @@ jobs:
     needs: workloads
     runs-on: ubuntu-latest
     environment: bootstrap
-    timeout-minutes: 90
+    timeout-minutes: 45
 
     env:
       TF_IN_AUTOMATION: "true"
@@ -125,6 +135,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       AWS_PAGER: ""
+      AWS_CREDENTIAL_EXPIRATION: ${{ vars.AWS_CREDENTIAL_EXPIRATION }}
 
     steps:
       - name: Download repository
@@ -164,9 +175,19 @@ jobs:
             -lock-timeout=60s \
             -out=destruction.tfplan
 
+      - name: Reject non-destroy resource actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform show -json destruction.tfplan |
+            python3 scripts/check-destroy-only-plan.py
+
+      - name: Check lifetime before infrastructure destruction
+        run: python3 scripts/check-credential-lifetime.py 2700
+
       - name: Apply saved destroy plan
         run: |
-          terraform apply \
+          timeout --signal=INT --kill-after=120s 35m terraform apply \
             -input=false \
             -no-color \
             -lock-timeout=60s \
@@ -186,6 +207,17 @@ jobs:
           fi
 
           echo "Terraform state contains no managed resources."
+
+      - name: Preserve emergency state in private backend
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f errored.tfstate ]; then
+            aws s3 cp errored.tfstate \
+              "s3://sentinel-tfstate-485378272094-eu-north-1/sentinel/recovery/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT/errored.tfstate" \
+              --sse AES256 --only-show-errors
+          fi
 
       - name: Remove saved plan
         if: always()
